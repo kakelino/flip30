@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Book Flip</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 0;
+            background: #808080; /* Default background color */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: flex-start;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #settings {
+            margin: 10px 0;
+            background: #f9f9f9;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        #settings label {
+            display: flex;
+            flex-direction: column;
+            font-size: 14px;
+        }
+
+        #settings input, #settings select {
+            padding: 5px;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        #pdf-container {
+            position: relative;
+            width: 1600px; /* Default width */
+            height: 1080px; /* Default height */
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            background: #ddd; /* Default background */
+            border-radius: 10px;
+            transition: background-color 0.5s;
+        }
+
+        .page {
+            position: relative;
+            width: 48%; /* Default page size */
+            height: 100%;
+            background: white;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+            backface-visibility: hidden;
+            transform-style: preserve-3d;
+            z-index: 1;
+            border-radius: 5px;
+        }
+
+        .page.left {
+            transform-origin: right center;
+        }
+
+        .page.right {
+            transform-origin: left center;
+        }
+
+        .flip {
+            animation: flipPage 1.5s forwards;
+        }
+
+        .flip-above {
+            z-index: 2;
+        }
+
+        @keyframes flipPage {
+            0% {
+                transform: rotateY(0deg);
+            }
+            50% {
+                transform: rotateY(-90deg);
+                background-color: transparent; /* Remove gray area */
+            }
+            100% {
+                transform: rotateY(-180deg);
+            }
+        }
+
+        #nav-buttons {
+            position: absolute;
+            top: 50%;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            transform: translateY(-50%);
+            z-index: 2;
+        }
+
+        .nav-button {
+            background-color: #333;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .nav-button:hover {
+            background-color: #555;
+        }
+    </style>
+</head>
+<body>
+    <div id="settings">
+        <label>
+            Page Width (%):
+            <input type="range" id="page-width" min="40" max="80" value="48">
+        </label>
+        <label>
+            Container Width (px):
+            <input type="number" id="container-width" value="1600">
+        </label>
+        <label>
+            Container Height (px):
+            <input type="number" id="container-height" value="1080">
+        </label>
+        <label>
+            Background Color:
+            <input type="color" id="background-color" value="#dddddd">
+        </label>
+        <label>
+            Flip Speed (seconds):
+            <input type="number" step="0.1" id="flip-speed" value="1.5">
+        </label>
+    </div>
+
+    <div id="pdf-container">
+        <div id="nav-buttons">
+            <button class="nav-button" onclick="previousPage()">Previous</button>
+            <button class="nav-button" onclick="nextPage()">Next</button>
+        </div>
+        <div id="page-left" class="page left"></div>
+        <div id="page-right" class="page right"></div>
+    </div>
+
+    <audio id="page-flip-sound" src="flip2.mp3"></audio>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+    <script>
+        const url = 'code1.pdf'; // Replace with your actual PDF file path
+        let pdf = null;
+        let currentPage = 1;
+        const pageLeft = document.getElementById('page-left');
+        const pageRight = document.getElementById('page-right');
+        const pdfContainer = document.getElementById('pdf-container');
+
+        // Settings elements
+        const pageWidthInput = document.getElementById('page-width');
+        const containerWidthInput = document.getElementById('container-width');
+        const containerHeightInput = document.getElementById('container-height');
+        const backgroundColorInput = document.getElementById('background-color');
+        const flipSpeedInput = document.getElementById('flip-speed');
+
+        // Load the PDF
+        pdfjsLib.getDocument(url).promise.then(loadedPdf => {
+            pdf = loadedPdf;
+            renderPages(currentPage);
+        });
+
+        // Render two pages (left and right)
+        function renderPages(startPage) {
+            renderPage(startPage, pageLeft); // Render left page
+            renderPage(startPage + 1, pageRight); // Render right page
+        }
+
+        // Render a single page into the specified container
+        function renderPage(pageNumber, container) {
+            if (pageNumber > pdf.numPages || pageNumber < 1) {
+                container.innerHTML = ''; // Clear if out of bounds
+                return;
+            }
+
+            pdf.getPage(pageNumber).then(page => {
+                const scale = 1.3; // Scale to fit the container
+                const viewport = page.getViewport({ scale: scale });
+                const canvas = document.createElement('canvas');
+                const context = canvas.getContext('2d');
+                canvas.width = viewport.width;
+                canvas.height = viewport.height;
+
+                // Clear previous content and render the new page
+                container.innerHTML = '';
+                container.appendChild(canvas);
+
+                const renderContext = {
+                    canvasContext: context,
+                    viewport: viewport
+                };
+                page.render(renderContext);
+            });
+        }
+
+        // Flip to the next page
+        function nextPage() {
+            if (currentPage + 2 <= pdf.numPages) {
+                playPageFlipSound();
+
+                animateFlip(pageRight, true);
+                setTimeout(() => {
+                    currentPage += 2;
+                    renderPages(currentPage);
+                }, flipSpeedInput.value * 1000);
+            }
+        }
+
+        // Flip to the previous page
+        function previousPage() {
+            if (currentPage - 2 >= 1) {
+                playPageFlipSound();
+
+                animateFlip(pageLeft, false);
+                setTimeout(() => {
+                    currentPage -= 2;
+                    renderPages(currentPage);
+                }, flipSpeedInput.value * 1000);
+            }
+        }
+
+        // Play the page flip sound
+        function playPageFlipSound() {
+            const sound = document.getElementById('page-flip-sound');
+            sound.currentTime = 0;
+            sound.play();
+        }
+
+        // Animate the page flip
+        function animateFlip(page, isAbove) {
+            page.style.animationDuration = `${flipSpeedInput.value}s`;
+            page.classList.add('flip');
+            if (isAbove) page.classList.add('flip-above');
+
+            setTimeout(() => {
+                page.classList.remove('flip');
+                page.classList.remove('flip-above');
+            }, flipSpeedInput.value * 1000);
+        }
+
+        // Dynamically update settings
+        pageWidthInput.addEventListener('input', () => {
+            const newWidth = pageWidthInput.value + '%';
+            document.querySelectorAll('.page').forEach(page => {
+                page.style.width = newWidth;
+            });
+        });
+
+        containerWidthInput.addEventListener('input', () => {
+            pdfContainer.style.width = containerWidthInput.value + 'px';
+        });
+
+        containerHeightInput.addEventListener('input', () => {
+            pdfContainer.style.height = containerHeightInput.value + 'px';
+        });
+
+        backgroundColorInput.addEventListener('input', () => {
+            pdfContainer.style.backgroundColor = backgroundColorInput.value;
+        });
+    </script>
+</body>
+</html>
